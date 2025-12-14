@@ -284,10 +284,38 @@ class EntityExtractor:
         if 'go home' in text_lower or 'home directory' in text_lower:
             entities.directory = '~'
             
-        # Special case: "in it" (context resolution placeholder)
-        if 'in it' in text_lower or 'into it' in text_lower:
-            entities.raw_entities['context_ref'] = 'it'
-        
+        # Process pattern: "process named X", "process X", "kill X"
+        # We need a more general fallback for "process" commands if other patterns didn't catch it
+        if 'process' in text_lower or 'kill' in text_lower or 'stop' in text_lower:
+            # Try to grab the word after 'process'
+            process_match = re.search(r'\bprocess\s+(?:named\s+)?([a-zA-Z0-9_\-\.]+)', text_lower)
+            if process_match:
+                entities.process_name = process_match.group(1)
+            # If "kill X" or "stop X" where X is not "process"
+            elif not entities.process_name:
+                kill_match = re.search(r'\b(?:kill|stop)\s+(?:process\s+)?([a-zA-Z0-9_\-\.]+)', text_lower)
+                if kill_match:
+                    possible_proc = kill_match.group(1)
+                    # Filter out common stopwords if needed
+                    if possible_proc not in ['the', 'a', 'an', 'this', 'that', 'it', 'process']:
+                        entities.process_name = possible_proc
+
+        # Wifi/Target pattern: "password for X", "connect to X"
+        # This is a generic "target" extractor for things that aren't filenames
+        if 'password for' in text_lower or 'wifi for' in text_lower or 'profile' in text_lower:
+            target_match = re.search(r'\b(?:for|profile)\s+([a-zA-Z0-9_\-\.]+)', text)
+            if target_match:
+                # If we haven't found a text entity yet (quoted), use this
+                if not entities.search_text:
+                    entities.search_text = target_match.group(1)
+                    
+        # Fallback for "get wifi password X" where X is at the end
+        if 'wifi' in text_lower and not entities.search_text:
+             # Grab the last word if it looks like an SSID (simple heuristic)
+             words = text.split()
+             if len(words) > 1 and words[-1].lower() not in ['password', 'wifi', 'key', 'show', 'get']:
+                 entities.search_text = words[-1]
+
         return entities
 
 
